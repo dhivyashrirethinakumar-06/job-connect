@@ -1,5 +1,6 @@
 import sqlite3
 import pandas as pd
+from security import hash_password
 
 def import_job_seekers(excel_path):
     print(f"Reading file: {excel_path}")
@@ -72,7 +73,7 @@ def import_job_seekers(excel_path):
             'experience': exp_val,
             'location': loc_val,
             'work_image': None,
-            'password': '123'
+            'password': hash_password('123'),
         }
         
         new_users.append(user_data)
