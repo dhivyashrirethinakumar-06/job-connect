@@ -9,7 +9,8 @@ from datetime import datetime
 import requests
 import os 
 import time
-
+import secrets
+from security import hash_password, verify_password, is_hashed
 
 st.set_page_config(page_title="Job Portal", layout="wide", initial_sidebar_state="expanded")
 
