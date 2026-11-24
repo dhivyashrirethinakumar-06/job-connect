@@ -237,10 +237,16 @@ def init_db():
         status TEXT DEFAULT 'hired',
         timestamp TEXT DEFAULT (datetime('now'))
     )''')
-    
-    c.execute("SELECT COUNT(*) FROM users WHERE mobile='9999999999'")
+        c.execute("SELECT COUNT(*) FROM users WHERE mobile='9999999999'")
     if c.fetchone()[0] == 0:
-        c.execute("INSERT INTO users VALUES ('9999999999','Admin','Super Admin','','','','',NULL,'admin123',datetime('now'))")
+        admin_pw = os.environ.get("ADMIN_PASSWORD")
+        if not admin_pw:
+            admin_pw = secrets.token_urlsafe(9)
+            print(f"[JobConnect] First run. Admin mobile: 9999999999, temporary password: {admin_pw}")
+        c.execute(
+            "INSERT INTO users VALUES (?,?,?,?,?,?,?,?,?,datetime('now'))",
+            ('9999999999', 'Admin', 'Super Admin', '', '', '', '', None, hash_password(admin_pw))
+        )
     conn.commit()
     return conn
 
@@ -266,7 +272,7 @@ TRANSLATIONS = {
         "skills_req": "Required Skills", "users": "Users", "recent_jobs": "Recent Jobs", "preview": "Preview",
         "my_posted_jobs": "My Posted Jobs", "matched_seekers": "Matched Seekers", "job_posted": "Job Posted!",
         "seeker_reg": "Seeker Registered!", "creator_reg": "Creator Registered!", "logged_out": "Logged out!",
-        "invalid_credentials": "Invalid credentials", "admin_login": "Admin: 9999999999/admin123",
+        "invalid_credentials": "Invalid credentials",
         "user_exists": "User exists! Login instead.", "no_jobs": "No jobs posted yet!", "apply": "Apply Now",
         "update_success": "Profile updated successfully!", "contact": "***", "no_seekers": "No seekers matched yet!",
         "type_message": "Type a message...", "send": "Send", "no_chat": "No messages yet. Say Hi! ","gov_schemes": "Government Schemes", 
@@ -296,7 +302,7 @@ TRANSLATIONS = {
         "my_posted_jobs": "எனது விளம்பரங்கள்", "matched_seekers": "பொருத்த வேலை தேடுபவர்கள்",
         "job_posted": "வேலை பதிவிடப்பட்டது!", "seeker_reg": "வேலை தேடுபவர் பதிவு!", 
         "creator_reg": "வேலை வழங்குபவர் பதிவு!", "logged_out": "வெளியேறினீர்கள்!",
-        "invalid_credentials": "தவறான விவரங்கள்", "admin_login": "நிர்வாகி: 9999999999/admin123",
+        "invalid_credentials": "தவறான விவரங்கள்",
         "user_exists": "பயனர் உள்ளார்! உள்நுழையவும்.", "no_jobs": "வேலைகள் இல்லை!", "apply": "விண்ணப்பி",
         "update_success": "சுயவிவரம் மேம்படுத்தப்பட்டது!", "contact": "***", "no_seekers": "இன்னும் பொருத்த வேலை தேடுபவர்கள் இல்லை!",
         "type_message": "செய்தி டைப் செய்யுங்கள்...", "send": "அனுப்பு", "no_chat": "இன்னும் செய்திகள் இல்லை. ஹாய் சொல்லுங்கள்! ","gov_schemes": "அரசு திட்டங்கள்", "add_scheme": "திட்டம் சேர்", "scheme_name": "திட்ட பெயர்", 
@@ -505,7 +511,10 @@ def save_user(data):
     if not df.empty:
         st.warning(t("user_exists"))
         return False
-    
+    if not data.get('password') or len(data['password']) < 6:
+        st.warning("Password must be at least 6 characters.")
+        return False
+    data['password'] = hash_password(data['password'])
     required = {'skills': '', 'experience': '', 'location': '', 'aadhar': '', 'work_image': None}
     for k, v in required.items(): data.setdefault(k, v)
     pd.DataFrame([data]).to_sql('users', conn, if_exists='append', index=False)
@@ -632,8 +641,14 @@ if not st.session_state.user:
                 submitted = st.form_submit_button(t("login_btn"), use_container_width=True)
                 if submitted:
                     user = find_user(mobile)
-                    if user and user['password'] == password:
+                    if user and verify_password(password, user['password']):
+                        if not is_hashed(user['password']):  # upgrade old plaintext passwords
+                            conn.cursor().execute("UPDATE users SET password=? WHERE mobile=?",(hash_password(password), mobile)
+                            )
+                            conn.commit()
+                        user.pop('password', None)  # don't keep the hash in the session
                         st.session_state.user = user
+                    
                         st.success(f"{t('welcome')} {user['name']}!")
                         st.rerun()
                     else:
